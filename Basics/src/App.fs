@@ -23,7 +23,7 @@ incrementButton.onclick <- fun ev ->
 
 decrementButton.onclick <- fun ev ->
     // update the state
-    currentCount <- currentCount -  rnd.Next(5, 10)
+    currentCount <- currentCount - rnd.Next(5, 10)
     // update the view
     setCountText currentCount
 
@@ -43,3 +43,19 @@ increaseDelayedBtn.onclick <- fun _ ->
 
 // set the count viewer with the initial count
 setCountText currentCount
+
+// Globalization Sample
+open Fable.Core
+open Fable.Core.JsInterop
+
+type INumberFormatter =
+    abstract format : float -> string
+
+[<Emit("new Intl.NumberFormat($0, { style: 'currency', currency: $1 })")>]
+let moneyFormatter (culture: string) (currency: string) : INumberFormatter = jsNative
+
+let euro = moneyFormatter "nl-NL" "EUR"
+let usd = moneyFormatter "en-US" "USD"
+
+euro.format 1000.0 // € 1.000,00
+usd.format 1000.0 // $1,000.00
