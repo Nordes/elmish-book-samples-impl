@@ -4,26 +4,82 @@ open Elmish
 open Elmish.React
 open Feliz
 
+type Todo = {
+  Id: int
+  Description: string
+  Completed: bool
+}
+
 type State = {
-  TodoList : string list
+  TodoList : Todo list
   NewTodo : string
 }
 
 type Msg =
   | SetNewTodo of string
   | AddTodo
+  | ToggleCompleted of int
+  | DeleteTodo of int
 
 let init() : State =
-    { TodoList = []; NewTodo = "" }
+    { 
+      TodoList = [
+        { Id = 1; Description = "Learn F#"; Completed = true }
+        { Id = 2; Description = "Learn Elmish"; Completed = false }
+      ] 
+      NewTodo = "" 
+    }
 
 let update msg state =
     match msg with
     | SetNewTodo todoText -> { state with NewTodo = todoText }
+
+    | DeleteTodo todoId ->
+        let nextTodoList =
+          state.TodoList
+          |> List.filter (fun todo -> todo.Id <> todoId)
+
+        { state with TodoList = nextTodoList }
+
+    | ToggleCompleted todoId ->
+      let nextTodoList =
+        state.TodoList
+        |> List.map (fun todo ->
+           if todo.Id = todoId
+           then { todo with Completed = not todo.Completed }
+           else todo)
+
+      { state with TodoList = nextTodoList }
+  
     | AddTodo when state.NewTodo = "" -> state
+
     | AddTodo ->
-        { state with
-            NewTodo = ""
-            TodoList = List.append state.TodoList [state.NewTodo] }
+      let nextTodoId =
+        match state.TodoList with
+        | [ ] -> 1
+        | elems ->
+            elems
+            |> List.maxBy (fun todo -> todo.Id)
+            |> fun todo -> todo.Id + 1
+
+      let nextTodo =
+        { Id = nextTodoId
+          Description = state.NewTodo
+          Completed = false }
+
+      { state with
+          NewTodo = ""
+          TodoList = List.append state.TodoList [nextTodo] }
+
+    | ToggleCompleted todoId -> 
+        state
+        
+/// Helper function to easily construct div with only classes and children
+let div (classes: string list) (children: Fable.React.ReactElement list) =
+  Html.div [
+    prop.classes classes
+    prop.children children
+  ]
 
 let todoInputField (state: State) (dispatch: Msg -> unit) =
   Html.div [
@@ -55,14 +111,42 @@ let todoInputField (state: State) (dispatch: Msg -> unit) =
     ]
   ]
 
+let renderTodo (todo: Todo) (dispatch: Msg -> unit) =
+  div [ "box" ] [
+    div [ "columns"; "is-mobile"; "is-vcentered" ] [
+      div [ "column" ] [
+        Html.p [
+          prop.className "subtitle"
+          prop.text todo.Description
+        ]
+      ]
+
+      div [ "column"; "is-narrow" ] [
+        div [ "buttons" ] [
+          Html.button [
+            prop.className [ true, "button"; todo.Completed, "is-success"]
+            prop.onClick (fun _ -> dispatch (ToggleCompleted todo.Id))
+            prop.children [
+              Html.i [ prop.classes [ "fa"; "fa-check" ] ]
+            ]
+          ]
+
+          Html.button [
+            prop.classes [ "button"; "is-danger" ]
+            prop.onClick (fun _ -> dispatch (DeleteTodo todo.Id))
+            prop.children [
+              Html.i [ prop.classes [ "fa"; "fa-times" ] ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+
 let todoList (state: State) (dispatch: Msg -> unit) =
   Html.ul [
     prop.children [
-      for todo in state.TodoList ->
-        Html.li [
-          prop.classes ["box"; "subtitle"]
-          prop.text todo
-        ]
+      for todo in state.TodoList -> renderTodo todo dispatch
     ]
   ]
 
