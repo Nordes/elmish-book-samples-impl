@@ -13,12 +13,19 @@ type Todo = {
 type TodoBeingEdited = {
   Id: int
   Description: string
+  Dirty: bool
 }
+
+type Filter = 
+  | All
+  | Completed
+  | NotCompleted
 
 type State = {
   NewTodo : string
   TodoList : Todo list
   TodoBeingEdited : TodoBeingEdited option
+  Filter : Filter
 }
 
 type Msg =
@@ -30,6 +37,7 @@ type Msg =
   | ApplyEdit
   | StartEditingTodo of int
   | SetEditedDescription of string
+  | SetFilter of Filter
 
 let init() : State =
     { 
@@ -38,7 +46,8 @@ let init() : State =
           { Id = 1; Description = "Learn F#"; Completed = true }
           { Id = 2; Description = "Learn Elmish"; Completed = false }
         ] 
-      TodoBeingEdited = None 
+      TodoBeingEdited = None
+      Filter = All
     }
 
 let update msg state =
@@ -86,7 +95,7 @@ let update msg state =
         let nextEditModel =
           state.TodoList
           |> List.tryFind (fun todo -> todo.Id = todoId)
-          |> Option.map (fun todo -> { Id = todoId; Description = todo.Description })
+          |> Option.map (fun todo -> { Id = todoId; Description = todo.Description; Dirty = false })
 
         { state with TodoBeingEdited = nextEditModel }
 
@@ -108,12 +117,21 @@ let update msg state =
             { state with TodoList = nextTodoList; TodoBeingEdited = None }
 
     | SetEditedDescription newText ->
-        let nextEditModel =
-          state.TodoBeingEdited
-          |> Option.map (fun todoBeingEdited -> { todoBeingEdited with Description = newText })
+      let nextEditModel =
+        state.TodoBeingEdited
+        |> Option.map (fun todoBeingEdited -> { todoBeingEdited with Description = newText; Dirty = true })
 
-        { state with TodoBeingEdited = nextEditModel }    
+      { state with TodoBeingEdited = nextEditModel }    
+
+    | SetFilter filter ->
+      { state with Filter = filter }
         
+module KeyCode =
+    let enter = 13.
+    let esc = 27.
+    let upArrow = 38.
+    let downArrow =  40.
+
 /// Helper function to easily construct div with only classes and children
 let div (classes: string list) (children: Fable.React.ReactElement list) =
   Html.div [
@@ -132,6 +150,11 @@ let todoInputField (state: State) (dispatch: Msg -> unit) =
             prop.classes [ "input"; "is-medium" ]
             prop.valueOrDefault state.NewTodo
             prop.onTextChange (SetNewTodo >> dispatch)
+            prop.onKeyDown (fun ev -> 
+              if ev.keyCode = KeyCode.enter then 
+                ev.preventDefault()
+                dispatch AddTodo
+            )
           ]
         ]
       ]
@@ -146,6 +169,33 @@ let todoInputField (state: State) (dispatch: Msg -> unit) =
               Html.i [ prop.classes [ "fa"; "fa-plus" ] ]
             ]
           ]
+        ]
+      ]
+    ]
+  ]
+
+let renderFilterTabs (state: Filter) (dispatch: Msg -> unit) = 
+  div ["tabs"; "is-toggle"; "is-fullwidth"] [
+    Html.ul [
+      Html.li [
+        prop.className [state = All, "is-active"]
+        prop.onClick (fun _ -> dispatch (SetFilter All))
+        prop.children [
+          Html.a [ Html.span [ prop.text "All" ] ]
+        ]
+      ]
+      Html.li [
+        prop.className [state = Completed, "is-active"]
+        prop.onClick (fun _ -> dispatch (SetFilter Completed))
+        prop.children [
+          Html.a [ Html.span [ prop.text "Completed" ] ]
+        ]
+      ]
+      Html.li [
+        prop.className [state = NotCompleted, "is-active"]
+        prop.onClick (fun _ -> dispatch (SetFilter NotCompleted))
+        prop.children [
+          Html.a [ Html.span [ prop.text "Not completed" ] ]
         ]
       ]
     ]
@@ -191,6 +241,7 @@ let renderTodo (todo: Todo) (dispatch: Msg -> unit) =
       ]
     ]
   ]
+
 let renderEditForm (todoBeingEdited: TodoBeingEdited) (dispatch: Msg -> unit) =
   div [ "box" ] [
     div [ "field"; "is-grouped" ] [
@@ -200,13 +251,21 @@ let renderEditForm (todoBeingEdited: TodoBeingEdited) (dispatch: Msg -> unit) =
           prop.classes [ "input"; "is-medium" ]
           prop.valueOrDefault todoBeingEdited.Description;
           prop.onTextChange (SetEditedDescription >> dispatch)
+          prop.onKeyDown (fun ev -> 
+            if ev.keyCode = KeyCode.enter then 
+              ev.preventDefault()
+              dispatch ApplyEdit
+            else if ev.keyCode = KeyCode.esc then
+              ev.preventDefault()
+              dispatch CancelEdit            
+          )
         ]
       ]
 
       div [ "control"; "buttons" ] [
         Html.button [
-          prop.classes [ "button"; "is-primary"]
-          prop.onClick (fun _ -> dispatch ApplyEdit)
+          prop.className [ true, "button"; todoBeingEdited.Dirty, "is-primary"; not todoBeingEdited.Dirty, "is-outlined"]
+          prop.onClick (fun _ -> if todoBeingEdited.Dirty then dispatch ApplyEdit)          
           prop.children [
             Html.i [ prop.classes ["fa"; "fa-save" ] ]
           ]
@@ -223,15 +282,26 @@ let renderEditForm (todoBeingEdited: TodoBeingEdited) (dispatch: Msg -> unit) =
     ]
   ]
 
+let renderTodoItem (state:State) (todo:Todo) (dispatch: Msg-> unit) =
+  match state.TodoBeingEdited with
+  | Some todoBeingEdited when todoBeingEdited.Id = todo.Id ->
+    renderEditForm todoBeingEdited dispatch
+  |  _ ->
+    renderTodo todo dispatch
+
 let todoList (state: State) (dispatch: Msg -> unit) =
   Html.ul [
     prop.children [
       for todo in state.TodoList ->
-        match state.TodoBeingEdited with
-        | Some todoBeingEdited when todoBeingEdited.Id = todo.Id ->
-          renderEditForm todoBeingEdited dispatch
+        match state.Filter with
+        | Completed when todo.Completed ->
+          renderTodoItem state todo dispatch
+        | NotCompleted when not todo.Completed ->
+          renderTodoItem state todo dispatch
+        | All ->
+          renderTodoItem state todo dispatch
         | _ ->
-          renderTodo todo dispatch      
+          Html.none      
     ]
   ]
 
@@ -265,6 +335,7 @@ let render (state: State) (dispatch: Msg -> unit) =
       prop.style [ style.margin 50 ]
       prop.children [
         todoInputField state dispatch
+        renderFilterTabs state.Filter dispatch
         todoList state dispatch
       ]
     ]
