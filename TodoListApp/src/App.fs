@@ -10,9 +10,15 @@ type Todo = {
   Completed: bool
 }
 
+type TodoBeingEdited = {
+  Id: int
+  Description: string
+}
+
 type State = {
-  TodoList : Todo list
   NewTodo : string
+  TodoList : Todo list
+  TodoBeingEdited : TodoBeingEdited option
 }
 
 type Msg =
@@ -20,14 +26,19 @@ type Msg =
   | AddTodo
   | ToggleCompleted of int
   | DeleteTodo of int
+  | CancelEdit
+  | ApplyEdit
+  | StartEditingTodo of int
+  | SetEditedDescription of string
 
 let init() : State =
     { 
-      TodoList = [
-        { Id = 1; Description = "Learn F#"; Completed = true }
-        { Id = 2; Description = "Learn Elmish"; Completed = false }
-      ] 
       NewTodo = "" 
+      TodoList = [
+          { Id = 1; Description = "Learn F#"; Completed = true }
+          { Id = 2; Description = "Learn Elmish"; Completed = false }
+        ] 
+      TodoBeingEdited = None 
     }
 
 let update msg state =
@@ -71,8 +82,37 @@ let update msg state =
           NewTodo = ""
           TodoList = List.append state.TodoList [nextTodo] }
 
-    | ToggleCompleted todoId -> 
-        state
+    | StartEditingTodo todoId ->
+        let nextEditModel =
+          state.TodoList
+          |> List.tryFind (fun todo -> todo.Id = todoId)
+          |> Option.map (fun todo -> { Id = todoId; Description = todo.Description })
+
+        { state with TodoBeingEdited = nextEditModel }
+
+    | CancelEdit ->
+        { state with TodoBeingEdited = None }
+
+    | ApplyEdit ->
+        match state.TodoBeingEdited with
+        | None -> state
+        | Some todoBeingEdited when todoBeingEdited.Description = "" -> state
+        | Some todoBeingEdited ->
+            let nextTodoList =
+              state.TodoList
+              |> List.map (fun todo ->
+                  if todo.Id = todoBeingEdited.Id
+                  then { todo with Description = todoBeingEdited.Description }
+                  else todo)
+
+            { state with TodoList = nextTodoList; TodoBeingEdited = None }
+
+    | SetEditedDescription newText ->
+        let nextEditModel =
+          state.TodoBeingEdited
+          |> Option.map (fun todoBeingEdited -> { todoBeingEdited with Description = newText })
+
+        { state with TodoBeingEdited = nextEditModel }    
         
 /// Helper function to easily construct div with only classes and children
 let div (classes: string list) (children: Fable.React.ReactElement list) =
@@ -118,6 +158,7 @@ let renderTodo (todo: Todo) (dispatch: Msg -> unit) =
         Html.p [
           prop.className "subtitle"
           prop.text todo.Description
+          prop.onClick (fun _ -> dispatch (StartEditingTodo  todo.Id))
         ]
       ]
 
@@ -128,6 +169,14 @@ let renderTodo (todo: Todo) (dispatch: Msg -> unit) =
             prop.onClick (fun _ -> dispatch (ToggleCompleted todo.Id))
             prop.children [
               Html.i [ prop.classes [ "fa"; "fa-check" ] ]
+            ]
+          ]
+          
+          Html.button [
+            prop.classes [ "button"; "is-primary" ]
+            prop.onClick (fun _ -> dispatch (StartEditingTodo  todo.Id))
+            prop.children [
+              Html.i [ prop.classes [ "fa"; "fa-edit" ] ]
             ]
           ]
 
@@ -142,11 +191,47 @@ let renderTodo (todo: Todo) (dispatch: Msg -> unit) =
       ]
     ]
   ]
+let renderEditForm (todoBeingEdited: TodoBeingEdited) (dispatch: Msg -> unit) =
+  div [ "box" ] [
+    div [ "field"; "is-grouped" ] [
+      div [ "control"; "is-expanded" ] [
+        Html.input [
+          prop.autoFocus true
+          prop.classes [ "input"; "is-medium" ]
+          prop.valueOrDefault todoBeingEdited.Description;
+          prop.onTextChange (SetEditedDescription >> dispatch)
+        ]
+      ]
+
+      div [ "control"; "buttons" ] [
+        Html.button [
+          prop.classes [ "button"; "is-primary"]
+          prop.onClick (fun _ -> dispatch ApplyEdit)
+          prop.children [
+            Html.i [ prop.classes ["fa"; "fa-save" ] ]
+          ]
+        ]
+
+        Html.button [
+          prop.classes ["button"; "is-warning"]
+          prop.onClick (fun _ -> dispatch CancelEdit)
+          prop.children [
+            Html.i [ prop.classes ["fa"; "fa-arrow-right"] ]
+          ]
+        ]
+      ]
+    ]
+  ]
 
 let todoList (state: State) (dispatch: Msg -> unit) =
   Html.ul [
     prop.children [
-      for todo in state.TodoList -> renderTodo todo dispatch
+      for todo in state.TodoList ->
+        match state.TodoBeingEdited with
+        | Some todoBeingEdited when todoBeingEdited.Id = todo.Id ->
+          renderEditForm todoBeingEdited dispatch
+        | _ ->
+          renderTodo todo dispatch      
     ]
   ]
 
