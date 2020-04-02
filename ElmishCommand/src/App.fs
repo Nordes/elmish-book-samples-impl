@@ -13,11 +13,26 @@ type Msg =
     | Increment
     | Decrement
     | IncrementDelayed
+    | DecrementDelayed
 
 let init() =
     { Count = 0 ; Loading = false }, Cmd.none
 
 let update msg state =
+    let delayedSleepMsg (sleep: Async<unit>) (msg: Msg) : Cmd<Msg> =
+        let incrementDelayedCmd (dispatch: Msg -> unit) : unit =
+            let delayedDispatch = async {
+                do! sleep
+                dispatch msg
+            }
+
+            Async.StartImmediate delayedDispatch
+
+        Cmd.ofSub incrementDelayedCmd
+
+    let delayedMsg (delay: int) (msg: Msg) : Cmd<Msg> =
+        delayedSleepMsg (Async.Sleep delay) msg      
+
     match msg with
     | Increment ->
         { state with Loading = false; Count = state.Count + 1 }, Cmd.none
@@ -26,16 +41,8 @@ let update msg state =
         { state with Count = state.Count - 1 }, Cmd.none
 
     | IncrementDelayed when state.Loading -> state, Cmd.none
-    | IncrementDelayed ->
-      let incrementDelayedCmd (dispatch: Msg -> unit) : unit =
-          let delayedDispatch = async {
-              do! Async.Sleep 1000
-              dispatch Increment
-          }
-
-          Async.StartImmediate delayedDispatch
-
-      { state with Loading = true }, Cmd.ofSub incrementDelayedCmd
+    | IncrementDelayed -> state, delayedMsg 1000 Increment
+    | DecrementDelayed -> state, delayedMsg 1000 Decrement
 
 let render (state: State) (dispatch: Msg -> unit) =
   let headerText =
@@ -82,7 +89,7 @@ let render (state: State) (dispatch: Msg -> unit) =
       oddOrEvenMessage
       // if state.Count > 0 then yield oddOrEvenMessage // <=== if all is being yield.
       Html.p [
-        prop.text "https://zaid-ajaj.github.io/the-elmish-book/#/chapters/commands/async-updates"
+        prop.text "https://zaid-ajaj.github.io/the-elmish-book/#/chapters/commands/async-to-cmd"
       ]
     ]
   ]
